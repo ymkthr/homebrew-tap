@@ -1,0 +1,95 @@
+name: Update Casks & Formulas
+
+on:
+  schedule:
+    # 毎日 UTC 0:00（JST 9:00）にチェック
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update all Casks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          updated=false
+
+          for cask_file in Casks/*.rb; do
+            [ -f "$cask_file" ] || continue
+            name=$(basename "$cask_file" .rb)
+            echo "=== Checking cask: $name ==="
+
+            # Caskファイルから現在のバージョンを取得
+            current=$(grep -m1 'version "' "$cask_file" | sed 's/.*version "//;s/"//')
+            if [ -z "$current" ]; then
+              # シングルクォートの場合
+              current=$(grep -m1 "version '" "$cask_file" | sed "s/.*version '//;s/'//")
+            fi
+
+            # urlからGitHubリポジトリ（owner/repo）を抽出
+            # パターン: https://github.com/{owner}/{repo}/releases/download/...
+            repo=$(grep -m1 'url "' "$cask_file" | grep -oP 'github\.com/\K[^/]+/[^/]+' || true)
+            if [ -z "$repo" ]; then
+              repo=$(grep -m1 "url '" "$cask_file" | grep -oP 'github\.com/\K[^/]+/[^/]+' || true)
+            fi
+
+            if [ -z "$repo" ] || [ -z "$current" ]; then
+              echo "  Skipped: could not parse repo or version"
+              continue
+            fi
+
+            echo "  Current: $current"
+            echo "  Repo: $repo"
+
+            # GitHub APIで最新リリースのタグを取得
+            latest=$(gh api "repos/$repo/releases/latest" --jq '.tag_name' 2>/dev/null | sed 's/^v//')
+            if [ -z "$latest" ]; then
+              echo "  Skipped: could not fetch latest release"
+              continue
+            fi
+            echo "  Latest: $latest"
+
+            if [ "$current" = "$latest" ]; then
+              echo "  Already up to date"
+              continue
+            fi
+
+            # urlパターンからアセットURLを構築してSHA256を計算
+            # #{version} を実際のバージョンに置換してURL取得
+            asset_url=$(grep -m1 'url ["\x27]' "$cask_file" | sed "s/.*url [\"']//;s/[\"'].*//;s/#{version}/$latest/g")
+            # v#{version} パターンの場合、vは既にURLに含まれている
+            echo "  Asset URL: $asset_url"
+
+            sha256=$(curl -sfL "$asset_url" | shasum -a 256 | awk '{print $1}')
+            if [ -z "$sha256" ] || [ "$sha256" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ]; then
+              echo "  Skipped: failed to download asset or empty file"
+              continue
+            fi
+            echo "  SHA256: $sha256"
+
+            # Caskファイルを更新
+            sed -i "s/version [\"']${current}[\"']/version \"${latest}\"/" "$cask_file"
+            sed -i "s/sha256 [\"'][a-f0-9]*[\"']/sha256 \"${sha256}\"/" "$cask_file"
+            echo "  Updated: $current -> $latest"
+            updated=true
+          done
+
+          echo "updated=$updated" >> "$GITHUB_ENV"
+
+      - name: Commit and push
+        if: env.updated == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/ Formula/
+          # 更新されたcask/formulaをコミットメッセージに列挙
+          changes=$(git diff --cached --name-only | sed 's|.*/||;s|\.rb$||' | paste -sd ', ' -)
+          git commit -m "Update: $changes"
+          git push
