@@ -1,12 +1,12 @@
 # typed: false
 # frozen_string_literal: true
 
-# Karukan Japanese IME for macOS (togatoga/karukan, karukan-macos frontend).
+# Karukan Japanese IME for macOS (togatoga/karukan, karukan-im/macos frontend).
 #
-# Upstream's v0.1.0 tag predates the karukan-macos frontend, so `stable`
-# pins a commit on main with a `0.1.0.YYYYMMDD` version (commit date).
-# When upstream tags a release containing karukan-macos, switch `url` to the
-# tag tarball; `0.2.0 > 0.1.0.20260624` so upgrades keep working.
+# Upstream's v0.1.0 tag predates the macOS frontend, so `stable` pins a commit
+# on main with a `0.1.0.YYYYMMDD` version (commit date). When upstream tags a
+# release containing the macOS frontend, switch `url` to the tag tarball;
+# `0.2.0 > 0.1.0.20260821` so upgrades keep working.
 #
 # Bump procedure:
 #   1. Pick a commit: gh api repos/togatoga/karukan/commits/main --jq .sha
@@ -16,9 +16,9 @@
 class Karukan < Formula
   desc "Japanese IME with neural kana-kanji conversion (macOS InputMethodKit)"
   homepage "https://github.com/togatoga/karukan"
-  url "https://github.com/togatoga/karukan/archive/6746900de5ae44f1cf3b28784235e9b2f22326ee.tar.gz"
-  version "0.1.0.20260624"
-  sha256 "6bac2e03e5f01c048520d7fc3544b25e37fd6bf0d3df52bd7a1b528d14f1bf41"
+  url "https://github.com/togatoga/karukan/archive/2d7f4f8f03597ba4d714777b58e352f3814e7dc8.tar.gz"
+  version "0.1.0.20260821"
+  sha256 "a6e566b64c0ebe3564af01bc4045c54344bf38c0962e9a8ad4d379efa091a7d2"
   license any_of: ["MIT", "Apache-2.0"]
   head "https://github.com/togatoga/karukan.git", branch: "main"
 
@@ -36,7 +36,17 @@ class Karukan < Formula
     # Homebrew's sandbox denies writes to the real $HOME (~/.cargo).
     ENV["CARGO_HOME"] = "#{buildpath}/cargo_home"
 
-    cd "karukan-macos" do
+    # cc-rs must reach the real compiler, not Homebrew's shim: superenv
+    # rewrites optimization flags, and aws-lc-sys (rustls backend, pulled in
+    # via hf-hub) compiles jitterentropy with -O0 deliberately — superenv's
+    # -Os trips the library's "must not be compiled with optimizations"
+    # #error. Nothing here links against brew-provided C libraries, so the
+    # shim's include/lib paths are not needed.
+    ENV["CC"] = "/usr/bin/clang"
+    ENV["CXX"] = "/usr/bin/clang++"
+
+    # The frontend lived in karukan-macos/ until upstream #84 (2026-08-03).
+    cd "karukan-im/macos" do
       # SwiftPM sandboxes the Package.swift compile with sandbox-exec, and
       # macOS forbids nesting that inside Homebrew's build sandbox
       # ("sandbox_apply: Operation not permitted"). Disable SwiftPM's own
