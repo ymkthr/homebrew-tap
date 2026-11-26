@@ -1,6 +1,6 @@
 cask "oh-my-usage" do
-  version "0.1.0"
-  sha256 "aec0802ed925d24bf448c4114cd1417ce947bba8482edcbe485698892d19e831"
+  version "0.3.0"
+  sha256 "ede2625718371524bd4dfe6ec9b6f20165bca7e143de0699d50df8fc3b725e4a"
 
   url "https://github.com/ymkthr/oh-my-usage/releases/download/v#{version}/oh-my-usage.zip"
   name "oh-my-usage"
